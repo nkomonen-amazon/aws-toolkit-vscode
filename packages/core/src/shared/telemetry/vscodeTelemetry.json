@@ -252,6 +252,12 @@
             "description": "Status of the an auth connection."
         },
         {
+            "name": "authState",
+            "type": "string",
+            "allowedValues": ["created", "deleted", "expired", "refreshed"],
+            "description": "The state of a specific auth connection."
+        },
+        {
             "name": "authEnabledFeatures",
             "type": "string",
             "description": "Comma-delimited list of features for which auth is enabled."
@@ -283,6 +289,32 @@
                 },
                 {
                     "type": "attempts",
+                    "required": false
+                }
+            ]
+        },
+        {
+            "name": "auth_connectionStateChanged",
+            "description": "An Auth connection has changed its state",
+            "metadata": [
+                {
+                    "type": "authState",
+                    "required": true
+                },
+                {
+                    "type": "source",
+                    "required": true
+                },
+                {
+                    "type": "credentialSourceId",
+                    "required": true
+                },
+                {
+                    "type": "credentialStartUrl",
+                    "required": false
+                },
+                {
+                    "type": "sessionDuration",
                     "required": false
                 }
             ]
