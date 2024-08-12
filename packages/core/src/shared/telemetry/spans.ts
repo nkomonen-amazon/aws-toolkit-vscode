@@ -24,7 +24,7 @@ import {
 } from '../errors'
 import { entries, NumericKeys } from '../utilities/tsUtils'
 
-const AsyncLocalStorage: typeof AsyncLocalStorageClass =
+export const AsyncLocalStorage: typeof AsyncLocalStorageClass =
     require('async_hooks').AsyncLocalStorage ??
     class<T> {
         readonly #store: T[] = []
