@@ -36,6 +36,7 @@ import { StandardRetryStrategy, defaultRetryDecider } from '@smithy/middleware-r
 import { AuthenticationFlow } from './model'
 import { toSnakeCase } from '../../shared/utilities/textUtilities'
 import { getUserAgent } from '../../shared/telemetry/util'
+import { withTelemetryContext } from '../../shared/telemetry/spans'
 
 export class OidcClient {
     public constructor(
@@ -159,6 +160,8 @@ type PromisifyClient<T> = {
     [P in keyof T]: T[P] extends (...args: any[]) => any ? ExtractOverload<T[P], PromisifyClient<T>> : T[P]
 }
 
+const ssoClientClassName = 'SsoClient'
+
 export class SsoClient {
     public get region() {
         const region = this.client.config.region
@@ -171,6 +174,7 @@ export class SsoClient {
         private readonly provider: SsoAccessTokenProvider
     ) {}
 
+    @withTelemetryContext({ name: 'listAccounts', class: ssoClientClassName })
     public listAccounts(
         request: Omit<ListAccountsRequest, OmittedProps> = {}
     ): AsyncCollection<RequiredProps<AccountInfo, 'accountId'>[]> {
@@ -183,6 +187,7 @@ export class SsoClient {
             .map((accounts) => accounts.map((a) => (assertHasProps(a, 'accountId'), a)))
     }
 
+    @withTelemetryContext({ name: 'listAccountRoles', class: ssoClientClassName })
     public listAccountRoles(
         request: Omit<ListAccountRolesRequest, OmittedProps>
     ): AsyncCollection<Required<RoleInfo>[]> {
@@ -195,6 +200,7 @@ export class SsoClient {
             .map((roles) => roles.map((r) => (assertHasProps(r, 'roleName', 'accountId'), r)))
     }
 
+    @withTelemetryContext({ name: 'getRoleCredentials', class: ssoClientClassName })
     public async getRoleCredentials(request: Omit<GetRoleCredentialsRequest, OmittedProps>) {
         const response = await this.call(this.client.getRoleCredentials, request)
 
@@ -209,6 +215,7 @@ export class SsoClient {
         }
     }
 
+    @withTelemetryContext({ name: 'logout', class: ssoClientClassName })
     public async logout(request: Omit<LogoutRequest, OmittedProps> = {}) {
         await this.call(this.client.logout, request)
     }
@@ -232,6 +239,7 @@ export class SsoClient {
         return requester(request as T)
     }
 
+    @withTelemetryContext({ name: 'handleError', class: ssoClientClassName })
     private async handleError(error: unknown): Promise<never> {
         if (error instanceof SSOServiceException && isClientFault(error) && error.name !== 'ForbiddenException') {
             getLogger().warn(`credentials (sso): invalidating stored token: ${error.message}`)

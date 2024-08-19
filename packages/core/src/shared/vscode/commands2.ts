@@ -16,6 +16,7 @@ import { keysAsInt } from '../utilities/tsUtils'
 import { partialClone } from '../utilities/collectionUtils'
 import { isAmazonQ } from '../extensionUtilities'
 import { isNameMangled } from '../utilities/typeConstructors'
+import { asStringifiedStack } from '../telemetry/spans'
 
 type Callback = (...args: any[]) => any
 type CommandFactory<T extends Callback, U extends any[]> = (...parameters: U) => T
@@ -501,6 +502,7 @@ function getInstrumenter(
                 command: id.id,
                 debounceCount,
                 ...fields,
+                source: asStringifiedStack(telemetry.getFunctionStack()),
             })
 
             return fn(...args)
@@ -660,7 +662,13 @@ async function runCommand<T extends Callback>(fn: T, info: CommandInfo<T>): Prom
             await vscode.commands.executeCommand(`_aws.${prefix}.auth.autoConnect`)
         }
 
-        return await (instrumenter ? instrumenter(fn, ...args) : fn(...args))
+        // wrap all command executions with their ID as context for telemetry.
+        return telemetry.function_call.run(
+            async () => {
+                return await (instrumenter ? instrumenter(fn, ...args) : fn(...args))
+            },
+            { emit: false, functionId: { name: id, class: 'Commands' } }
+        )
     } catch (error) {
         if (errorHandler !== undefined) {
             errorHandler(info, error)

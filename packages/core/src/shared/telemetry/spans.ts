@@ -23,6 +23,7 @@ import {
     getTelemetryResult,
 } from '../errors'
 import { entries, NumericKeys } from '../utilities/tsUtils'
+import { telemetry } from './telemetry'
 
 const AsyncLocalStorage: typeof AsyncLocalStorageClass =
     require('async_hooks').AsyncLocalStorage ??
@@ -361,9 +362,8 @@ export class TelemetryTracer extends TelemetryBase {
      * index being the top level call, and the last index being the final
      * nested call.
      *
-     * Ensure that {@link TelemetryTracer.runWithCallEntry()} and/or {@link TelemetrySpan.recordCallEntry()}
-     * have been used before this method is called, otherwise it will return
-     * no useful information.
+     * Ensure that there are uses of {@link TelemetryTracer.run()} with {@link SpanOptions.functionId}
+     * before this method is called, otherwise it will return no useful information.
      *
      * Use {@link asStringifiedStack} to create a stringified version of this stack.
      */
@@ -429,6 +429,57 @@ export class TelemetryTracer extends TelemetryBase {
 
         return ctx
     }
+}
+
+/**
+ * Decorator that simply wraps the method with a non-emitting telemetry `run()`, automatically
+ * `record()`ing the provided function id for later use by {@link TelemetryTracer.getFunctionStack()}
+ *
+ * This saves us from needing to wrap the entire function:
+ *
+ * **Before:**
+ * ```
+ * class A {
+ *     myMethod() {
+ *         telemetry.function_call.run(() => {
+ *                 ...
+ *             },
+ *             { emit: false, functionId: { name: 'myMethod', class: 'A' } }
+ *         )
+ *     }
+ * }
+ * ```
+ *
+ * **After:**
+ * ```
+ * class A {
+ *     @withTelemetryContext({ name: 'myMethod', class: 'A' })
+ *     myMethod() {
+ *         ...
+ *     }
+ * }
+ * ```
+ */
+export function withTelemetryContext(functionId: FunctionEntry) {
+    function decorator<This, Args extends any[], Return>(
+        originalMethod: (this: This, ...args: Args) => Return,
+        _context: ClassMethodDecoratorContext
+    ) {
+        function decoratedMethod(this: This, ...args: Args): Return {
+            return telemetry.function_call.run(
+                () => {
+                    // DEVELOPERS: Set a breakpoint here and step in to it to debug the original function
+                    return originalMethod.call(this, ...args)
+                },
+                {
+                    emit: false,
+                    functionId: functionId,
+                }
+            )
+        }
+        return decoratedMethod
+    }
+    return decorator
 }
 
 /**
