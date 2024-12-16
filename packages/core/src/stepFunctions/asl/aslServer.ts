@@ -25,7 +25,7 @@ import {
     Diagnostic,
     Disposable,
     DocumentRangeFormattingRequest,
-    IConnection,
+    Connection,
     InitializeParams,
     InitializeResult,
     NotificationType,
@@ -33,7 +33,7 @@ import {
     ServerCapabilities,
     TextDocuments,
     TextDocumentSyncKind,
-} from 'vscode-languageserver'
+} from 'vscode-languageserver/node'
 
 import { posix } from 'path'
 import * as URL from 'url'
@@ -41,12 +41,12 @@ import { getLanguageModelCache } from '../../shared/languageServer/languageModel
 import { formatError, runSafe, runSafeAsync } from '../../shared/languageServer/utils/runner'
 import { YAML_ASL, JSON_ASL } from '../constants/aslFormats'
 
-export const ResultLimitReached: NotificationType<string, any> = new NotificationType('asl/resultLimitReached')
+export const ResultLimitReached: NotificationType<string> = new NotificationType('asl/resultLimitReached')
 
-export const ForceValidateRequest: RequestType<string, Diagnostic[], any, any> = new RequestType('asl/validate')
+export const ForceValidateRequest: RequestType<string, Diagnostic[], any> = new RequestType('asl/validate')
 
 // Create a connection for the server
-const connection: IConnection = createConnection()
+const connection: Connection = createConnection()
 
 process.on('unhandledRejection', (e: any) => {
     console.error(formatError('Unhandled exception', e))
@@ -178,8 +178,8 @@ class LimitExceededWarnings {
                 warning.timeout.refresh()
             } else {
                 warning = { features: { [name]: name } }
-                warning.timeout = setTimeout(() => {
-                    connection.sendNotification(
+                warning.timeout = setTimeout(async () => {
+                    await connection.sendNotification(
                         ResultLimitReached,
                         `${posix.basename(uri)}: For performance reasons, ${Object.keys(warning.features).join(
                             ' and '
@@ -226,11 +226,11 @@ connection.onDidChangeConfiguration((change) => {
 
 // Retry schema validation on all open documents
 connection.onRequest(ForceValidateRequest, async (uri) => {
-    return new Promise<Diagnostic[]>((resolve) => {
+    return new Promise<Diagnostic[]>(async (resolve) => {
         const document = documents.get(uri)
         if (document) {
             // updateConfiguration()
-            validateTextDocument(document, (diagnostics) => {
+            await validateTextDocument(document, (diagnostics) => {
                 resolve(diagnostics)
             })
         } else {
@@ -247,10 +247,10 @@ documents.onDidChangeContent((change) => {
 })
 
 // a document has closed: clear all diagnostics
-documents.onDidClose((event) => {
+documents.onDidClose(async (event) => {
     LimitExceededWarnings.cancel(event.document.uri)
     cleanPendingValidation(event.document)
-    connection.sendDiagnostics({ uri: event.document.uri, diagnostics: [] })
+    await connection.sendDiagnostics({ uri: event.document.uri, diagnostics: [] })
 })
 
 const pendingValidationRequests: { [uri: string]: NodeJS.Timer } = {}
@@ -266,9 +266,9 @@ function cleanPendingValidation(textDocument: TextDocument): void {
 
 function triggerValidation(textDocument: TextDocument): void {
     cleanPendingValidation(textDocument)
-    pendingValidationRequests[textDocument.uri] = setTimeout(() => {
+    pendingValidationRequests[textDocument.uri] = setTimeout(async () => {
         delete pendingValidationRequests[textDocument.uri]
-        validateTextDocument(textDocument)
+        await validateTextDocument(textDocument)
     }, validationDelayMs)
 }
 
@@ -281,15 +281,18 @@ function getLanguageService(langId: string): LanguageService {
     }
 }
 
-function validateTextDocument(textDocument: TextDocument, callback?: (diagnostics: Diagnostic[]) => void): void {
-    const respond = (diagnostics: Diagnostic[]) => {
-        connection.sendDiagnostics({ uri: textDocument.uri, diagnostics })
+async function validateTextDocument(
+    textDocument: TextDocument,
+    callback?: (diagnostics: Diagnostic[]) => void
+): Promise<void> {
+    const respond = async (diagnostics: Diagnostic[]) => {
+        await connection.sendDiagnostics({ uri: textDocument.uri, diagnostics })
         if (callback) {
             callback(diagnostics)
         }
     }
     if (textDocument.getText().length === 0) {
-        respond([])
+        await respond([])
 
         return
     }
@@ -301,10 +304,10 @@ function validateTextDocument(textDocument: TextDocument, callback?: (diagnostic
         .doValidation(textDocument, jsonDocument, documentSettings)
         .then(
             (diagnostics) => {
-                setTimeout(() => {
+                setTimeout(async () => {
                     const currDocument = documents.get(textDocument.uri)
                     if (currDocument && currDocument.version === version) {
-                        respond(diagnostics) // Send the computed diagnostics to VSCode.
+                        await respond(diagnostics) // Send the computed diagnostics to VSCode.
                     }
                 }, 100)
             },

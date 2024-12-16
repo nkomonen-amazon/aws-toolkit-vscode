@@ -37,12 +37,12 @@ import {
     NotificationType,
     ServerOptions,
     TransportKind,
-} from 'vscode-languageclient'
+} from 'vscode-languageclient/node'
 
 import { YAML_ASL, JSON_ASL, ASL_FORMATS } from '../constants/aslFormats'
 import { StepFunctionsSettings } from '../utils'
 
-export const ResultLimitReached: NotificationType<string, any> = new NotificationType('asl/resultLimitReached')
+export const ResultLimitReached: NotificationType<string> = new NotificationType('asl/resultLimitReached')
 
 interface Settings {
     asl?: {
@@ -52,6 +52,7 @@ interface Settings {
 }
 
 export class ASLLanguageClient {
+    // For testing purposes only
     static isReady = false
 
     /**
@@ -116,8 +117,7 @@ export class ASLLanguageClient {
         )
         client.registerProposedFeatures()
 
-        const disposable = client.start()
-        toDispose.push(disposable)
+        await client.start()
 
         const languageConfiguration: LanguageConfiguration = {
             wordPattern: /("(?:[^\\\"]*(?:\\.)?)*"?)|[^\s{}\[\],:]+/,
@@ -127,6 +127,18 @@ export class ASLLanguageClient {
             },
         }
         languages.setLanguageConfiguration('asl', languageConfiguration)
+
+        updateFormatterRegistration()
+        const disposableFunc = { dispose: () => rangeFormatting?.dispose() as void }
+        toDispose.push(disposableFunc)
+        toDispose.push(config.onDidChange(({ key }) => key === 'format.enable' && updateFormatterRegistration()))
+
+        client.onNotification(ResultLimitReached, (message) => {
+            void window.showInformationMessage(
+                `${message}\nUse setting 'aws.stepfunctions.asl.maxItemsComputed' to configure the limit.`
+            )
+        })
+        this.isReady = true
 
         function updateFormatterRegistration() {
             const formatEnabled = config.get('format.enable', false)
@@ -144,13 +156,17 @@ export class ASLLanguageClient {
                         const params: DocumentRangeFormattingParams = {
                             textDocument: client.code2ProtocolConverter.asTextDocumentIdentifier(document),
                             range: client.code2ProtocolConverter.asRange(range),
-                            options: client.code2ProtocolConverter.asFormattingOptions(options),
+                            options: client.code2ProtocolConverter.asFormattingOptions(options, {}),
                         }
 
                         return client.sendRequest(DocumentRangeFormattingRequest.type, params, token).then(
                             (response) => client.protocol2CodeConverter.asTextEdits(response),
                             async (error) => {
-                                client.logFailedRequest(DocumentRangeFormattingRequest.type, error)
+                                client.error(
+                                    `${DocumentRangeFormattingRequest.type.method} request failed.`,
+                                    error,
+                                    false
+                                )
 
                                 return Promise.resolve([])
                             }
@@ -159,20 +175,6 @@ export class ASLLanguageClient {
                 })
             }
         }
-
-        return client.onReady().then(() => {
-            updateFormatterRegistration()
-            const disposableFunc = { dispose: () => rangeFormatting?.dispose() as void }
-            toDispose.push(disposableFunc)
-            toDispose.push(config.onDidChange(({ key }) => key === 'format.enable' && updateFormatterRegistration()))
-
-            client.onNotification(ResultLimitReached, (message) => {
-                void window.showInformationMessage(
-                    `${message}\nUse setting 'aws.stepfunctions.asl.maxItemsComputed' to configure the limit.`
-                )
-            })
-            this.isReady = true
-        })
     }
 }
 

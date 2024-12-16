@@ -20,9 +20,9 @@ import {
     NotificationType,
     ServerOptions,
     TransportKind,
-} from 'vscode-languageclient'
+} from 'vscode-languageclient/node'
 
-export const ResultLimitReached: NotificationType<string, any> = new NotificationType('ssm/resultLimitReached')
+export const ResultLimitReached: NotificationType<string> = new NotificationType('ssm/resultLimitReached')
 
 const jsonLanguageConfiguration: LanguageConfiguration = {
     wordPattern: /("(?:[^\\\"]*(?:\\.)?)*"?)|[^\s{}\[\],:]+/,
@@ -55,8 +55,6 @@ async function getLanguageServerDebuggerPort(extensionContext: ExtensionContext)
  * Starts the SSM Documents LSP client/server and creates related resources (vscode `OutputChannel`).
  */
 export async function activate(extensionContext: ExtensionContext) {
-    const toDispose = extensionContext.subscriptions
-
     // The server is implemented in node
     // This file is copied by webpack from "aws-ssm-document-language-service" dependency at build time
     const serverModule = extensionContext.asAbsolutePath(path.join('dist/src/ssmDocument/ssm/', 'ssmServer.js'))
@@ -108,18 +106,15 @@ export async function activate(extensionContext: ExtensionContext) {
     )
     client.registerProposedFeatures()
 
-    const disposable = client.start()
-    toDispose.push(disposable)
+    await client.start()
 
     languages.setLanguageConfiguration('ssm-json', jsonLanguageConfiguration)
     languages.setLanguageConfiguration('ssm-yaml', yamlLanguageConfiguration)
 
-    return client.onReady().then(() => {
-        client.onNotification(ResultLimitReached, (message) => {
-            void window.showInformationMessage(
-                `${message}\nUse setting 'aws.ssmDocument.ssm.maxItemsComputed' to configure the limit.`
-            )
-        })
+    client.onNotification(ResultLimitReached, (message) => {
+        void window.showInformationMessage(
+            `${message}\nUse setting 'aws.ssmDocument.ssm.maxItemsComputed' to configure the limit.`
+        )
     })
 }
 

@@ -16,7 +16,7 @@ import * as jose from 'jose'
 
 import { Disposable, ExtensionContext } from 'vscode'
 
-import { LanguageClient, LanguageClientOptions, ServerOptions, TransportKind } from 'vscode-languageclient'
+import { LanguageClient, LanguageClientOptions, ServerOptions, TransportKind } from 'vscode-languageclient/node'
 import {
     BuildIndexRequestPayload,
     BuildIndexRequestType,
@@ -242,8 +242,7 @@ export async function activate(extensionContext: ExtensionContext) {
     )
     LspClient.instance.client.registerProposedFeatures()
 
-    const disposable = LspClient.instance.client.start()
-    toDispose.push(disposable)
+    await LspClient.instance.client.start()
 
     let savedDocument: vscode.Uri | undefined = undefined
 
@@ -273,10 +272,8 @@ export async function activate(extensionContext: ExtensionContext) {
         })
     )
 
-    return LspClient.instance.client.onReady().then(() => {
-        const disposableFunc = { dispose: () => rangeFormatting?.dispose() as void }
-        toDispose.push(disposableFunc)
-    })
+    const disposableFunc = { dispose: () => rangeFormatting?.dispose() as void }
+    toDispose.push(disposableFunc)
 }
 
 export async function deactivate(): Promise<any> {
