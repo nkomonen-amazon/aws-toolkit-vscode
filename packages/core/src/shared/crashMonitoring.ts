@@ -8,7 +8,7 @@ import { getSessionId as _getSessionId, getComputeEnvType } from './telemetry/ut
 import { getErrorId, getTelemetryReason, getTelemetryReasonDesc, isFileNotFoundError, ToolkitError } from './errors'
 import { isAutomation, isDebugInstance } from './vscode/env'
 import { DevSettings } from './settings'
-import vscode from 'vscode'
+import vscode, { ExtensionContext } from 'vscode'
 import { telemetry } from './telemetry'
 import { Logger } from './logger'
 import { isNewOsSession } from './utilities/osUtils'
@@ -19,6 +19,9 @@ import { crashMonitoringDirName } from './constants'
 import { throwOnUnstableFileSystem } from './filesystemUtilities'
 import { withRetries } from './utilities/functionUtils'
 import { truncateUuid } from './crypto'
+import { LanguageClient, LanguageClientOptions } from 'vscode-languageclient/node'
+import { crashHeartbeatInterval, CrashNotifications } from './crashMonitoringTypes'
+import * as cp from 'child_process'
 
 const className = 'CrashMonitoring'
 
@@ -120,6 +123,8 @@ export class CrashMonitoring {
         if (this.isAutomation) {
             return
         }
+
+        await CrashMonitoringLanguageClient.create(globals.context)
 
         try {
             await this.heartbeat.start()
@@ -361,7 +366,7 @@ class CrashChecker {
  *
  * TODO: Merge this in with the Interval class so that it comes for free with it.
  */
-class TimeLag {
+export class TimeLag {
     private lastExecution: number = 0
 
     constructor(private readonly interval: number) {}
@@ -701,4 +706,52 @@ function emitFailure(args: { functionName: string; error: unknown }) {
         reasonDesc: getTelemetryReasonDesc(args.error),
         passive: true,
     })
+}
+
+/**
+ * The Client for the Crash Monitoring Language Server
+ */
+class CrashMonitoringLanguageClient {
+    /**
+     * Starts the ASL LSP client/server and creates related resources (vscode `OutputChannel`,
+     * `registerDocumentRangeFormattingEditProvider`, …).
+     */
+    static async create(extensionContext: ExtensionContext) {
+        // The server is implemented in node
+        const serverModule = extensionContext.asAbsolutePath('dist/src/shared/crashMonitoringServer.js')
+        // The debug options for the server
+        // --inspect=6009: runs the server in Node's Inspector mode so VS Code can attach to the server for debugging
+        const debugOptions = { execArgv: ['--nolazy', '--inspect=6009', '--preserve-symlinks', '--stdio'] }
+        // If the extension is launch in debug mode the debug server options are use
+        // Otherwise the run options are used
+
+        const child = cp.spawn('node', [serverModule, ...debugOptions.execArgv], { detached: true })
+        child.unref()
+
+        const serverOptions = () => Promise.resolve({ process: child!, detached: true })
+
+        // Options to control the language client
+        const clientOptions: LanguageClientOptions = {
+            outputChannel: globals.logOutputChannel,
+        }
+
+        // Create the language client and start the client.
+        const client = new LanguageClient('crashMonitoring', 'CrashMonitoring', serverOptions, clientOptions)
+
+        await client.start()
+
+        client.onNotification(CrashNotifications.TelemetryNotification, (message) => {
+            logger.info(`WOULD EMIT TELEMETRY EVENT FOR CRASH: %O`, message)
+        })
+
+        await client.sendNotification(CrashNotifications.Start, {
+            sessionId: 'testSessionId',
+            extensionId: 'testExtensionId',
+            rootDir: globals.context.globalStorageUri.fsPath,
+        })
+
+        setInterval(async () => {
+            await client.sendNotification(CrashNotifications.Heartbeat)
+        }, crashHeartbeatInterval)
+    }
 }

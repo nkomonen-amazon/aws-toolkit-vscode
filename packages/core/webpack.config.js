@@ -23,6 +23,7 @@ module.exports = (env, argv) => {
         ...baseConfig,
         entry: {
             'src/stepFunctions/asl/aslServer': './src/stepFunctions/asl/aslServer.ts',
+            'src/shared/crashMonitoringServer': './src/shared/crashMonitoringServer.ts',
         },
     }
 

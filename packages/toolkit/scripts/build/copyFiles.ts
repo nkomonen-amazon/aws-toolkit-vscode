@@ -69,6 +69,12 @@ const tasks: CopyTask[] = [
         destination: path.join('src', 'stepFunctions', 'asl', 'aslServer.js'),
     },
 
+    // Crash Monitoring
+    {
+        target: path.join('../../node_modules', 'aws-core-vscode', 'dist', 'src', 'shared', 'crashMonitoringServer.js'),
+        destination: path.join('src', 'shared', 'crashMonitoringServer.js'),
+    },
+
     // Vue
     {
         target: path.join('../core', 'resources', 'js', 'vscode.js'),
